@@ -30,12 +30,21 @@ export async function createBooking(input: {
     }).returning();
 
     await db.insert(activityLog).values({ tenantId: input.tenantId, appointmentId: appt.id, action: "created" });
-    await publishEvent(input.tenantId, { id: appt.id, event: "created" });
+
+    try {
+      await publishEvent(input.tenantId, { id: appt.id, event: "created" });
+    } catch (e) {
+      console.error("Failed to publish appointment event", e);
+    }
 
     const leadMs = 24 * 60 * 60 * 1000;
     const dueAt = new Date(input.startAt.getTime() - leadMs);
     if (dueAt.getTime() > Date.now()) {
-      await scheduleReminder(appt.id, input.tenantId, dueAt);
+      try {
+        await scheduleReminder(appt.id, input.tenantId, dueAt);
+      } catch (e) {
+        console.error("Failed to schedule appointment reminder", e);
+      }
     }
 
     return { ok: true as const, appointmentId: appt.id };
