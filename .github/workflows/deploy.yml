@@ -18,6 +18,11 @@ jobs:
       WEB_SERVICE: bookcerto-web
       WORKER_SERVICE: bookcerto-worker
       IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/bookcerto/app
+      # Runtime service account for both Cloud Run services. Same identity Terraform
+      # uses (var.service_account) and which holds roles/secretmanager.secretAccessor
+      # on the mounted secrets. Reuses the WIF auth step's service account so the
+      # deploy does not silently reset the revision to the default Compute Engine SA.
+      SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +39,9 @@ jobs:
       # Workload Identity Federation: no long-lived service account key.
       # Requires a WIF pool/provider bound to this repo plus the service
       # account granted roles/iam.workloadIdentityUser, roles/artifactregistry.writer,
-      # roles/run.admin and roles/iam.serviceAccountUser. See task-13-report.md.
+      # roles/run.admin, roles/iam.serviceAccountUser and
+      # roles/secretmanager.secretAccessor (the latter so the runtime SA can read the
+      # mounted secrets). See task-13-report.md.
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
@@ -69,13 +76,16 @@ jobs:
       # the secret_ids Terraform (task-12 main.tf) provisions: database-url,
       # redis-url, auth-secret, all on version "latest". Without these the web
       # service boots with none of DATABASE_URL/REDIS_URL/AUTH_SECRET and env.ts
-      # zod-parse fails on every route.
+      # zod-parse fails on every route. --service-account must match the identity
+      # Terraform grants roles/secretmanager.secretAccessor to (var.service_account),
+      # else the mounted secrets are unreadable by the default Compute Engine SA.
       - name: Deploy web
         run: |
           gcloud run deploy ${{ env.WEB_SERVICE }} \
             --image ${{ env.IMAGE }}:${{ github.sha }} \
             --region ${{ env.REGION }} \
             --project ${{ vars.GCP_PROJECT_ID }} \
+            --service-account $SERVICE_ACCOUNT \
             --allow-unauthenticated \
             --set-secrets=DATABASE_URL=database-url:latest,REDIS_URL=redis-url:latest,AUTH_SECRET=auth-secret:latest
 
@@ -92,6 +102,7 @@ jobs:
             --image ${{ env.IMAGE }}:${{ github.sha }} \
             --region ${{ env.REGION }} \
             --project ${{ vars.GCP_PROJECT_ID }} \
+            --service-account $SERVICE_ACCOUNT \
             --command npx \
             --args "tsx,src/worker.ts" \
             --min-instances 1 \
