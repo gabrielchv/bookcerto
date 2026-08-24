@@ -1,6 +1,6 @@
 import { db } from "@/db/client";
 import { appointments, clients, activityLog } from "@/db/schema";
-import { redis } from "@/lib/redis";
+import { publishEvent } from "@/lib/events";
 
 export async function createBooking(input: {
   tenantId: string;
@@ -29,7 +29,7 @@ export async function createBooking(input: {
     }).returning();
 
     await db.insert(activityLog).values({ tenantId: input.tenantId, appointmentId: appt.id, action: "created" });
-    await redis.publish(`tenant:${input.tenantId}:appointments`, JSON.stringify({ id: appt.id, event: "created" }));
+    await publishEvent(input.tenantId, { id: appt.id, event: "created" });
     return { ok: true as const, appointmentId: appt.id };
   } catch (e) {
     const err = e as { code?: string; cause?: { code?: string } };
