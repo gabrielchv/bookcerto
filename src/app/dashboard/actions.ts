@@ -14,7 +14,11 @@ export async function updateAppointmentStatus(
   appointmentId: string,
   status: TransitionStatus,
 ): Promise<{ error?: string }> {
-  const { tenantId } = await requireTenant();
+  const { tenantId, role } = await requireTenant();
+
+  if (role !== "owner" && role !== "staff") {
+    return { error: "Not authorized." };
+  }
 
   if (!appointmentId || !statusValues.includes(status)) {
     return { error: "Invalid transition." };
