@@ -34,15 +34,17 @@ export async function updateAppointmentStatus(
     return { error: "Appointment not found." };
   }
 
-  await db
-    .update(appointments)
-    .set({ status })
-    .where(eq(appointments.id, appt.id));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(appointments)
+      .set({ status })
+      .where(eq(appointments.id, appt.id));
 
-  await db.insert(activityLog).values({
-    tenantId,
-    appointmentId: appt.id,
-    action: status,
+    await tx.insert(activityLog).values({
+      tenantId,
+      appointmentId: appt.id,
+      action: status,
+    });
   });
 
   try {
