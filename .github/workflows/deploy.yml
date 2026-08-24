@@ -1,0 +1,72 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      REGION: us-central1
+      REPO: bookcerto
+      WEB_SERVICE: bookcerto-web
+      WORKER_SERVICE: bookcerto-worker
+      IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/bookcerto/app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Workload Identity Federation: no long-lived service account key.
+      # Requires a WIF pool/provider bound to this repo plus the service
+      # account granted roles/iam.workloadIdentityUser, roles/artifactregistry.writer,
+      # roles/run.admin and roles/iam.serviceAccountUser. See task-13-report.md.
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker authentication
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Run database migrations
+        run: npx drizzle-kit migrate
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          # drizzle.config.ts imports env.ts, which zod-parses all three vars
+          # even though migrate only touches DATABASE_URL. Placeholders satisfy
+          # parsing; the real REDIS_URL/AUTH_SECRET live in Secret Manager.
+          REDIS_URL: redis://localhost:6379
+          AUTH_SECRET: migrate-only-placeholder-000000000000
+
+      - name: Deploy web
+        run: gcloud run deploy ${{ env.WEB_SERVICE }} --image ${{ env.IMAGE }}:${{ github.sha }} --region ${{ env.REGION }} --project ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Deploy worker
+        run: gcloud run deploy ${{ env.WORKER_SERVICE }} --image ${{ env.IMAGE }}:${{ github.sha }} --region ${{ env.REGION }} --project ${{ vars.GCP_PROJECT_ID }} --command npx --args "tsx,src/worker.ts"
