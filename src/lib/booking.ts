@@ -1,6 +1,7 @@
 import { db } from "@/db/client";
 import { appointments, clients, activityLog } from "@/db/schema";
 import { publishEvent } from "@/lib/events";
+import { scheduleReminder } from "@/lib/reminders";
 
 export async function createBooking(input: {
   tenantId: string;
@@ -30,6 +31,13 @@ export async function createBooking(input: {
 
     await db.insert(activityLog).values({ tenantId: input.tenantId, appointmentId: appt.id, action: "created" });
     await publishEvent(input.tenantId, { id: appt.id, event: "created" });
+
+    const leadMs = 24 * 60 * 60 * 1000;
+    const dueAt = new Date(input.startAt.getTime() - leadMs);
+    if (dueAt.getTime() > Date.now()) {
+      await scheduleReminder(appt.id, input.tenantId, dueAt);
+    }
+
     return { ok: true as const, appointmentId: appt.id };
   } catch (e) {
     const err = e as { code?: string; cause?: { code?: string } };
