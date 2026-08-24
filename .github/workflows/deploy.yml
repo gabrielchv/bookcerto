@@ -65,8 +65,35 @@ jobs:
           REDIS_URL: redis://localhost:6379
           AUTH_SECRET: migrate-only-placeholder-000000000000
 
+      # --set-secrets mounts Secret Manager values at runtime. Secret names map to
+      # the secret_ids Terraform (task-12 main.tf) provisions: database-url,
+      # redis-url, auth-secret, all on version "latest". Without these the web
+      # service boots with none of DATABASE_URL/REDIS_URL/AUTH_SECRET and env.ts
+      # zod-parse fails on every route.
       - name: Deploy web
-        run: gcloud run deploy ${{ env.WEB_SERVICE }} --image ${{ env.IMAGE }}:${{ github.sha }} --region ${{ env.REGION }} --project ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          gcloud run deploy ${{ env.WEB_SERVICE }} \
+            --image ${{ env.IMAGE }}:${{ github.sha }} \
+            --region ${{ env.REGION }} \
+            --project ${{ vars.GCP_PROJECT_ID }} \
+            --allow-unauthenticated \
+            --set-secrets=DATABASE_URL=database-url:latest,REDIS_URL=redis-url:latest,AUTH_SECRET=auth-secret:latest
 
+      # Worker is a Cloud Run *service*, matching terraform main.tf's
+      # google_cloud_run_v2_service "worker" (command npx, args tsx/src/worker.ts,
+      # min_instances 1). --no-cpu-throttling keeps it consuming the queue without
+      # an inbound request. CAVEAT: the worker binds no HTTP port, so Cloud Run's
+      # default readiness probe on :8080 will never pass and the revision never
+      # becomes ready; terraform main.tf does not override the probe/port either,
+      # so this must be fixed at the infra layer (startup_probe or a Job migration).
       - name: Deploy worker
-        run: gcloud run deploy ${{ env.WORKER_SERVICE }} --image ${{ env.IMAGE }}:${{ github.sha }} --region ${{ env.REGION }} --project ${{ vars.GCP_PROJECT_ID }} --command npx --args "tsx,src/worker.ts"
+        run: |
+          gcloud run deploy ${{ env.WORKER_SERVICE }} \
+            --image ${{ env.IMAGE }}:${{ github.sha }} \
+            --region ${{ env.REGION }} \
+            --project ${{ vars.GCP_PROJECT_ID }} \
+            --command npx \
+            --args "tsx,src/worker.ts" \
+            --min-instances 1 \
+            --no-cpu-throttling \
+            --set-secrets=DATABASE_URL=database-url:latest,REDIS_URL=redis-url:latest,AUTH_SECRET=auth-secret:latest
