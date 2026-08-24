@@ -18,27 +18,21 @@ resource "neon_project" "bookcerto" {
   pg_version = var.neon_pg_version
 }
 
-resource "neon_branch" "main" {
-  project_id = neon_project.bookcerto.id
-  parent_id  = neon_project.bookcerto.default_branch_id
-  name       = "main"
-}
-
 resource "neon_endpoint" "main" {
   project_id = neon_project.bookcerto.id
-  branch_id  = neon_branch.main.id
+  branch_id  = neon_project.bookcerto.default_branch_id
   type       = "read_write"
 }
 
 resource "neon_role" "app" {
   project_id = neon_project.bookcerto.id
-  branch_id  = neon_branch.main.id
+  branch_id  = neon_project.bookcerto.default_branch_id
   name       = "bookcerto"
 }
 
 resource "neon_database" "app" {
   project_id = neon_project.bookcerto.id
-  branch_id  = neon_branch.main.id
+  branch_id  = neon_project.bookcerto.default_branch_id
   name       = "bookcerto"
   owner_name = neon_role.app.name
 }
