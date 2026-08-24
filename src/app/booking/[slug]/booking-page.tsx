@@ -23,12 +23,10 @@ const fmtTime = (iso: string) =>
 
 export function BookingPage({
   slug,
-  tenantId,
   staff,
   services,
 }: {
   slug: string;
-  tenantId: string;
   staff: StaffItem[];
   services: ServiceItem[];
 }) {
@@ -38,10 +36,11 @@ export function BookingPage({
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Slot | null>(null);
-  const [state, formAction, pending] = useActionState(bookAction, initialState);
+  const [state, formAction, pending] = useActionState(
+    bookAction.bind(null, slug),
+    initialState,
+  );
   const [refresh, setRefresh] = useState(0);
-
-  const service = services.find((s) => s.id === serviceId);
 
   useEffect(() => {
     if (!staffId || !serviceId || !date) return;
@@ -157,11 +156,9 @@ export function BookingPage({
           <p className="text-sm font-medium">
             Selected: {fmtTime(selected.startAt)} — {fmtTime(selected.endAt)}
           </p>
-          <input type="hidden" name="tenantId" value={tenantId} />
           <input type="hidden" name="staffId" value={staffId} />
           <input type="hidden" name="serviceId" value={serviceId} />
           <input type="hidden" name="startAt" value={selected.startAt} />
-          <input type="hidden" name="durationMinutes" value={service?.durationMinutes ?? 0} />
           <input
             name="clientName"
             placeholder="Your name"

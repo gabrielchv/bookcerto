@@ -22,7 +22,6 @@ export default async function Page({
   return (
     <BookingPage
       slug={slug}
-      tenantId={tenant.id}
       staff={staffList.map((s) => ({ id: s.id, displayName: s.displayName, color: s.color }))}
       services={serviceList.map((s) => ({
         id: s.id,
