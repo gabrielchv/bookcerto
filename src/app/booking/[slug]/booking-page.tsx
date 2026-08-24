@@ -80,7 +80,10 @@ export function BookingPage({
           Staff
           <select
             value={staffId}
-            onChange={(e) => setStaffId(e.target.value)}
+            onChange={(e) => {
+              setStaffId(e.target.value);
+              setSelected(null);
+            }}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm"
           >
             {staff.map((s) => (
@@ -95,7 +98,10 @@ export function BookingPage({
           Service
           <select
             value={serviceId}
-            onChange={(e) => setServiceId(e.target.value)}
+            onChange={(e) => {
+              setServiceId(e.target.value);
+              setSelected(null);
+            }}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm"
           >
             {services.map((s) => (
@@ -114,7 +120,10 @@ export function BookingPage({
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setDate(e.target.value);
+              setSelected(null);
+            }}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm"
           />
         </label>
