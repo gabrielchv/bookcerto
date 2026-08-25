@@ -3,45 +3,12 @@ provider "google" {
   region  = var.region
 }
 
-provider "neon" {
-  api_key = var.neon_api_key
-}
-
-provider "upstash" {
-  email   = var.upstash_email
-  api_key = var.upstash_api_key
-}
-
-resource "neon_project" "bookcerto" {
-  name       = "bookcerto"
-  region_id  = var.neon_region_id
-  pg_version = var.neon_pg_version
-}
-
-resource "neon_endpoint" "main" {
-  project_id = neon_project.bookcerto.id
-  branch_id  = neon_project.bookcerto.default_branch_id
-  type       = "read_write"
-}
-
-resource "neon_role" "app" {
-  project_id = neon_project.bookcerto.id
-  branch_id  = neon_project.bookcerto.default_branch_id
-  name       = "bookcerto"
-}
-
-resource "neon_database" "app" {
-  project_id = neon_project.bookcerto.id
-  branch_id  = neon_project.bookcerto.default_branch_id
-  name       = "bookcerto"
-  owner_name = neon_role.app.name
-}
-
-resource "upstash_redis_database" "main" {
-  database_name = "bookcerto"
-  region        = var.upstash_region
-  tls           = true
-}
+# Neon and Upstash are external SaaS, not GCP infra, and their community
+# Terraform providers are broken against current APIs (Neon requires an org_id
+# that personal accounts don't have; Upstash deprecated regional DB creation).
+# They are provisioned through their own consoles. Their connection strings
+# arrive here as variables and land in Secret Manager. Terraform owns GCP only:
+# Artifact Registry + Secret Manager. CI owns the app deployment.
 
 resource "google_artifact_registry_repository" "app" {
   location      = var.region
@@ -58,7 +25,7 @@ resource "google_secret_manager_secret" "database_url" {
 
 resource "google_secret_manager_secret_version" "database_url" {
   secret      = google_secret_manager_secret.database_url.secret_id
-  secret_data = "postgresql://${neon_role.app.name}:${neon_role.app.password}@${neon_endpoint.main.host}/${neon_database.app.name}?sslmode=require"
+  secret_data = var.database_url
 }
 
 resource "google_secret_manager_secret" "redis_url" {
@@ -70,7 +37,7 @@ resource "google_secret_manager_secret" "redis_url" {
 
 resource "google_secret_manager_secret_version" "redis_url" {
   secret      = google_secret_manager_secret.redis_url.secret_id
-  secret_data = "rediss://default:${upstash_redis_database.main.password}@${upstash_redis_database.main.endpoint}:${upstash_redis_database.main.port}"
+  secret_data = var.redis_url
 }
 
 resource "google_secret_manager_secret" "auth_secret" {
@@ -101,112 +68,4 @@ resource "google_secret_manager_secret_iam_member" "auth_secret_accessor" {
   secret_id = google_secret_manager_secret.auth_secret.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${var.service_account}"
-}
-
-resource "google_cloud_run_v2_service" "web" {
-  name     = "bookcerto-web"
-  location = var.region
-
-  template {
-    service_account = var.service_account
-
-    containers {
-      image = var.image
-      ports {
-        container_port = 8080
-      }
-      env {
-        name = "DATABASE_URL"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.database_url.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name = "REDIS_URL"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.redis_url.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name = "AUTH_SECRET"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.auth_secret.secret_id
-            version = "latest"
-          }
-        }
-      }
-      resources {
-        limits = {
-          cpu    = "1000m"
-          memory = "512Mi"
-        }
-      }
-    }
-
-    scaling {
-      min_instance_count = 0
-      max_instance_count = 10
-    }
-  }
-}
-
-resource "google_cloud_run_v2_service" "worker" {
-  name     = "bookcerto-worker"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
-
-  template {
-    service_account = var.service_account
-
-    containers {
-      image   = var.image
-      command = ["npx"]
-      args    = ["tsx", "src/worker.ts"]
-      env {
-        name = "DATABASE_URL"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.database_url.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name = "REDIS_URL"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.redis_url.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name = "AUTH_SECRET"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.auth_secret.secret_id
-            version = "latest"
-          }
-        }
-      }
-      resources {
-        limits = {
-          cpu    = "1000m"
-          memory = "512Mi"
-        }
-      }
-    }
-
-    scaling {
-      min_instance_count = 1
-      max_instance_count = 1
-    }
-  }
 }
