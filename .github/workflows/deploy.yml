@@ -52,16 +52,15 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      # docker/login-action uses the WIF access token directly, which buildx
-      # can consume reliably. `gcloud auth configure-docker` writes a credential
-      # helper that buildx cannot read, so the build fails with "error getting
-      # credentials".
+      # `gcloud auth configure-docker` writes a credential helper buildx can't
+      # read ("error getting credentials"), and docker/login-action's
+      # ${{ steps.auth.outputs.access_token }} came back empty. Piping the token
+      # from gcloud (already authenticated by the WIF creds file) to docker login
+      # is the reliable path.
       - name: Login to Artifact Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGION }}-docker.pkg.dev
-          username: oauth2accesstoken
-          password: ${{ steps.auth.outputs.access_token }}
+        run: |
+          gcloud auth print-access-token | \
+            docker login -u oauth2accesstoken --password-stdin ${{ env.REGION }}-docker.pkg.dev
 
       - name: Build and push image
         uses: docker/build-push-action@v6
