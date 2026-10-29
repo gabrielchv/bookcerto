@@ -8,6 +8,15 @@ Built as a single Next.js full-stack monolith, where the point is the backend
 depth: multi-tenancy, a database-level overlap guarantee, background jobs, and a
 real deploy story.
 
+**Live:** https://bookcerto-e77phu6mxq-uc.a.run.app/booking/aurora
+The demo tenant is seeded (`npm run seed:demo`). Open the booking page, or sign in
+at `/login` with `owner@bookcerto.demo` / `bookcerto-demo` for the dashboard.
+
+> **Cost ceiling.** This project runs entirely within R$30/month: Cloud Run at
+> `min-instances 0`, Neon Postgres and Upstash Redis on their free tiers. See
+> [`docs/COST-CEILING.md`](docs/COST-CEILING.md). Do not add a VM, an idle
+> database, or `--min-instances 1` to this project.
+
 ## Architecture
 
 ```

@@ -15,7 +15,7 @@ jobs:
     env:
       REGION: us-central1
       REPO: bookcerto
-      WEB_SERVICE: bookcerto-web
+      WEB_SERVICE: bookcerto
       WORKER_SERVICE: bookcerto-worker
       IMAGE: us-central1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/bookcerto/app
       # Runtime service account for both Cloud Run services. Same identity Terraform
@@ -86,6 +86,11 @@ jobs:
       # zod-parse fails on every route. --service-account must match the identity
       # Terraform grants roles/secretmanager.secretAccessor to (var.service_account),
       # else the mounted secrets are unreadable by the default Compute Engine SA.
+      #
+      # COST CEILING (hard rule, see docs/COST-CEILING.md): the monthly Google Cloud
+      # bill must never exceed R$30. --min-instances 0 is what makes that possible;
+      # min-instances 1 bills a vCPU 24/7 (~R$270/month) whether or not anyone visits.
+      # --max-instances caps a traffic spike. Do not remove either flag.
       - name: Deploy web
         run: |
           gcloud run deploy ${{ env.WEB_SERVICE }} \
@@ -94,15 +99,25 @@ jobs:
             --project ${{ vars.GCP_PROJECT_ID }} \
             --service-account $SERVICE_ACCOUNT \
             --allow-unauthenticated \
+            --min-instances 0 \
+            --max-instances 2 \
+            --cpu 1 \
+            --memory 512Mi \
             --set-secrets=DATABASE_URL=database-url:latest,REDIS_URL=redis-url:latest,AUTH_SECRET=auth-secret:latest
 
       # Worker is a Cloud Run *service*, matching terraform main.tf's
-      # google_cloud_run_v2_service "worker" (command npx, args tsx/src/worker.ts,
-      # min_instances 1). --no-cpu-throttling keeps it consuming the queue without
-      # an inbound request. CAVEAT: the worker binds no HTTP port, so Cloud Run's
-      # default readiness probe on :8080 will never pass and the revision never
-      # becomes ready; terraform main.tf does not override the probe/port either,
-      # so this must be fixed at the infra layer (startup_probe or a Job migration).
+      # google_cloud_run_v2_service "worker" (command npx, args tsx/src/worker.ts).
+      # CAVEAT: the worker binds no HTTP port, so Cloud Run's default readiness
+      # probe on :8080 will never pass and the revision never becomes ready;
+      # terraform main.tf does not override the probe/port either, so this must be
+      # fixed at the infra layer (startup_probe or a Job migration).
+      #
+      # COST CEILING: this previously deployed with --min-instances 1 and
+      # --no-cpu-throttling, which bills a full vCPU 24/7 (~R$270/month) for a demo
+      # queue consumer nobody is watching. Both are gone: min 0 so it costs nothing
+      # while idle, and CPU throttling left ON so billing stops between requests.
+      # A real deployment would move this to a Cloud Run Job on a schedule, which is
+      # the only shape that is both always-working and cheap.
       - name: Deploy worker
         run: |
           gcloud run deploy ${{ env.WORKER_SERVICE }} \
@@ -112,6 +127,6 @@ jobs:
             --service-account $SERVICE_ACCOUNT \
             --command npx \
             --args "tsx,src/worker.ts" \
-            --min-instances 1 \
-            --no-cpu-throttling \
+            --min-instances 0 \
+            --max-instances 1 \
             --set-secrets=DATABASE_URL=database-url:latest,REDIS_URL=redis-url:latest,AUTH_SECRET=auth-secret:latest
