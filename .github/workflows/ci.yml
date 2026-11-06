@@ -28,11 +28,13 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      # Integration tests hit a live Neon branch. The booking test imports the
-      # db client and the redis-backed queue/event helpers, so env.ts requires
-      # all three vars to be present (even though the test only exercises
-      # DATABASE_URL). DATABASE_URL_CI must point at a disposable Neon branch;
+      # The booking test is an integration test against a real Neon branch: it
+      # imports the db client and the redis-backed queue/event helpers, and
+      # env.ts validates all three variables. When these secrets are absent the
+      # test skips itself (and says so) instead of failing the unit suite during
+      # env parsing. DATABASE_URL_CI must point at a disposable Neon branch;
       # REDIS_URL_CI and AUTH_SECRET_CI only need to be syntactically valid.
+      # To require the integration test in CI, add all three secrets.
       - name: Test
         run: npm test
         env:
